@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { 
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, 
+  BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, Legend, 
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import { format } from 'date-fns';
@@ -172,8 +172,8 @@ const Dashboard = () => {
                     >
                       <XAxis dataKey="month" />
                       <YAxis />
-                      <Tooltip 
-                        formatter={(value) => [`${value} mil AO`, '']}
+                      <RechartsTooltip 
+                        formatter={(value: number) => [`${value} mil AO`, '']}
                         labelFormatter={(label) => `Mês: ${label}`}
                       />
                       <Legend />
@@ -213,8 +213,8 @@ const Dashboard = () => {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        formatter={(value) => [new Intl.NumberFormat('pt-AO').format(value) + ' AO', '']}
+                      <RechartsTooltip 
+                        formatter={(value: number) => [new Intl.NumberFormat('pt-AO').format(value) + ' AO', '']}
                       />
                     </PieChart>
                   </ResponsiveContainer>

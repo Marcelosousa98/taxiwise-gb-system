@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { format, addMonths, isAfter, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
-  Plus, Filter, Search, Car, Calendar, AlertTriangle,
+  Plus, Filter, Search, Car as CarIcon, Calendar as CalendarIcon, AlertTriangle,
   Check, X, FileText, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -242,7 +242,7 @@ const MaintenancePage = () => {
                           variant="outline"
                           className="w-full justify-start text-left font-normal"
                         >
-                          <Calendar className="h-4 w-4 mr-2" />
+                          <CalendarIcon className="h-4 w-4 mr-2" />
                           {selectedDate ? (
                             format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
                           ) : (
@@ -433,7 +433,7 @@ const MaintenancePage = () => {
                       variant="outline"
                       className="w-full justify-start text-left font-normal"
                     >
-                      <Calendar className="h-4 w-4 mr-2" />
+                      <CalendarIcon className="h-4 w-4 mr-2" />
                       {formData.date ? (
                         format(formData.date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
                       ) : (
