@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
-import { Users, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye, UserCircle } from 'lucide-react';
+import { Users, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye, UserCircle, Download, FileText } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -49,12 +49,16 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { FileUpload } from '@/components/FileUpload';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import { supabase } from '@/integrations/supabase/client';
 
 const Drivers = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +73,9 @@ const Drivers = () => {
     endereco: "",
     telefone: "",
     data_contratacao: new Date(),
-    status: "ativo"
+    status: "ativo",
+    documento_bi_url: "",
+    documento_carta_url: ""
   });
 
   const fetchDrivers = async () => {
@@ -141,7 +147,9 @@ const Drivers = () => {
             endereco: formData.endereco,
             telefone: formData.telefone,
             data_contratacao: formData.data_contratacao.toISOString().split('T')[0],
-            status: formData.status
+            status: formData.status,
+            documento_bi_url: formData.documento_bi_url,
+            documento_carta_url: formData.documento_carta_url
           }
         ])
         .select();
@@ -158,11 +166,44 @@ const Drivers = () => {
         endereco: "",
         telefone: "",
         data_contratacao: new Date(),
-        status: "ativo"
+        status: "ativo",
+        documento_bi_url: "",
+        documento_carta_url: ""
       });
     } catch (error: any) {
       console.error('Erro ao cadastrar motorista:', error);
       toast.error(error.message || 'Erro ao cadastrar motorista');
+    }
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedDriver) return;
+    
+    try {
+      const { error } = await supabase
+        .from('motoristas')
+        .update({
+          nome: formData.nome,
+          documento: formData.documento,
+          endereco: formData.endereco,
+          telefone: formData.telefone,
+          data_contratacao: formData.data_contratacao.toISOString().split('T')[0],
+          status: formData.status,
+          documento_bi_url: formData.documento_bi_url,
+          documento_carta_url: formData.documento_carta_url
+        })
+        .eq('id', selectedDriver.id);
+        
+      if (error) throw error;
+      
+      toast.success('Motorista atualizado com sucesso!');
+      setIsEditDialogOpen(false);
+      setSelectedDriver(null);
+    } catch (error: any) {
+      console.error('Erro ao atualizar motorista:', error);
+      toast.error(error.message || 'Erro ao atualizar motorista');
     }
   };
 
@@ -186,6 +227,21 @@ const Drivers = () => {
     }
   };
 
+  const handleEdit = (driver: any) => {
+    setSelectedDriver(driver);
+    setFormData({
+      nome: driver.nome,
+      documento: driver.documento,
+      endereco: driver.endereco || "",
+      telefone: driver.telefone || "",
+      data_contratacao: driver.data_contratacao ? new Date(driver.data_contratacao) : new Date(),
+      status: driver.status,
+      documento_bi_url: driver.documento_bi_url || "",
+      documento_carta_url: driver.documento_carta_url || ""
+    });
+    setIsEditDialogOpen(true);
+  };
+
   const handleView = (driver: any) => {
     setSelectedDriver(driver);
     setIsViewDialogOpen(true);
@@ -194,6 +250,18 @@ const Drivers = () => {
   const handleDeleteConfirm = (driver: any) => {
     setSelectedDriver(driver);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleBIUpload = (files: File[], urls?: string[]) => {
+    if (urls && urls.length > 0) {
+      setFormData({ ...formData, documento_bi_url: urls[0] });
+    }
+  };
+
+  const handleLicenseUpload = (files: File[], urls?: string[]) => {
+    if (urls && urls.length > 0) {
+      setFormData({ ...formData, documento_carta_url: urls[0] });
+    }
   };
 
   return (
@@ -283,6 +351,7 @@ const Drivers = () => {
                 <TableHead>Documento</TableHead>
                 <TableHead>Telefone</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Documentos</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -302,6 +371,36 @@ const Drivers = () => {
                   <TableCell>
                     <StatusBadge status={driver.status} />
                   </TableCell>
+                  <TableCell>
+                    <div className="flex space-x-1">
+                      {driver.documento_bi_url && (
+                        <Badge variant="outline" className="cursor-pointer">
+                          <a 
+                            href={driver.documento_bi_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="flex items-center"
+                          >
+                            <FileText className="h-3 w-3 mr-1" />
+                            BI
+                          </a>
+                        </Badge>
+                      )}
+                      {driver.documento_carta_url && (
+                        <Badge variant="outline" className="cursor-pointer">
+                          <a 
+                            href={driver.documento_carta_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="flex items-center"
+                          >
+                            <FileText className="h-3 w-3 mr-1" />
+                            Carta
+                          </a>
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -314,7 +413,7 @@ const Drivers = () => {
                           <Eye className="h-4 w-4 mr-2" />
                           Ver detalhes
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(driver)}>
                           <Edit className="h-4 w-4 mr-2" />
                           Editar
                         </DropdownMenuItem>
@@ -356,7 +455,7 @@ const Drivers = () => {
       
       {/* Add Driver Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Adicionar Novo Motorista</DialogTitle>
             <DialogDescription>
@@ -365,99 +464,280 @@ const Drivers = () => {
           </DialogHeader>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="nome">Nome Completo</Label>
-                <Input
-                  id="nome"
-                  placeholder="Ex: João Silva"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                  required
-                />
-              </div>
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="info">Informações Básicas</TabsTrigger>
+                <TabsTrigger value="docs">Documentos</TabsTrigger>
+              </TabsList>
               
-              <div className="space-y-2">
-                <Label htmlFor="documento">Documento (BI/Carteira)</Label>
-                <Input
-                  id="documento"
-                  placeholder="Ex: 123456789LA012"
-                  value={formData.documento}
-                  onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="endereco">Endereço</Label>
-                <Input
-                  id="endereco"
-                  placeholder="Ex: Rua Principal, 123, Luanda"
-                  value={formData.endereco}
-                  onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="telefone">Telefone</Label>
-                <Input
-                  id="telefone"
-                  placeholder="Ex: +244 923 456 789"
-                  value={formData.telefone}
-                  onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Data de Contratação</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
+              <TabsContent value="info" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="nome">Nome Completo</Label>
+                    <Input
+                      id="nome"
+                      placeholder="Ex: João Silva"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="documento">Documento (BI/Carteira)</Label>
+                    <Input
+                      id="documento"
+                      placeholder="Ex: 123456789LA012"
+                      value={formData.documento}
+                      onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="endereco">Endereço</Label>
+                    <Input
+                      id="endereco"
+                      placeholder="Ex: Rua Principal, 123, Luanda"
+                      value={formData.endereco}
+                      onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="telefone">Telefone</Label>
+                    <Input
+                      id="telefone"
+                      placeholder="Ex: +244 923 456 789"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Data de Contratação</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            {formData.data_contratacao ? (
+                              format(formData.data_contratacao, "dd/MM/yyyy")
+                            ) : (
+                              <span>Selecionar data</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={formData.data_contratacao}
+                            onSelect={(date) => date && setFormData({ ...formData, data_contratacao: date })}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="status">Status</Label>
+                      <Select 
+                        value={formData.status} 
+                        onValueChange={(value) => setFormData({ ...formData, status: value })}
                       >
-                        {formData.data_contratacao ? (
-                          format(formData.data_contratacao, "dd/MM/yyyy")
-                        ) : (
-                          <span>Selecionar data</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.data_contratacao}
-                        onSelect={(date) => date && setFormData({ ...formData, data_contratacao: date })}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                        <SelectTrigger id="status">
+                          <SelectValue placeholder="Selecionar status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ativo">Ativo</SelectItem>
+                          <SelectItem value="inativo">Inativo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select 
-                    value={formData.status} 
-                    onValueChange={(value) => setFormData({ ...formData, status: value })}
-                  >
-                    <SelectTrigger id="status">
-                      <SelectValue placeholder="Selecionar status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ativo">Ativo</SelectItem>
-                      <SelectItem value="inativo">Inativo</SelectItem>
-                    </SelectContent>
-                  </Select>
+              </TabsContent>
+              
+              <TabsContent value="docs" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <FileUpload
+                    id="bi-upload"
+                    label="Bilhete de Identidade (BI)"
+                    accept="application/pdf"
+                    onChange={handleBIUpload}
+                    preview={true}
+                    bucket="driver_documents" 
+                    folder="bi"
+                    onUploadComplete={(urls) => setFormData({ ...formData, documento_bi_url: urls[0] })}
+                  />
+                  
+                  <FileUpload
+                    id="license-upload"
+                    label="Carta de Condução"
+                    accept="application/pdf"
+                    onChange={handleLicenseUpload}
+                    preview={true}
+                    bucket="driver_documents"
+                    folder="licenses"
+                    onUploadComplete={(urls) => setFormData({ ...formData, documento_carta_url: urls[0] })}
+                  />
                 </div>
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
             
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setIsAddDialogOpen(false)}>
                 Cancelar
               </Button>
               <Button type="submit">Adicionar Motorista</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Driver Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Editar Motorista</DialogTitle>
+            <DialogDescription>
+              Edite os detalhes do motorista.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleUpdate} className="space-y-4">
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="info">Informações Básicas</TabsTrigger>
+                <TabsTrigger value="docs">Documentos</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="info" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-nome">Nome Completo</Label>
+                    <Input
+                      id="edit-nome"
+                      placeholder="Ex: João Silva"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-documento">Documento (BI/Carteira)</Label>
+                    <Input
+                      id="edit-documento"
+                      placeholder="Ex: 123456789LA012"
+                      value={formData.documento}
+                      onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-endereco">Endereço</Label>
+                    <Input
+                      id="edit-endereco"
+                      placeholder="Ex: Rua Principal, 123, Luanda"
+                      value={formData.endereco}
+                      onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-telefone">Telefone</Label>
+                    <Input
+                      id="edit-telefone"
+                      placeholder="Ex: +244 923 456 789"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Data de Contratação</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            {formData.data_contratacao ? (
+                              format(formData.data_contratacao, "dd/MM/yyyy")
+                            ) : (
+                              <span>Selecionar data</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={formData.data_contratacao}
+                            onSelect={(date) => date && setFormData({ ...formData, data_contratacao: date })}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-status">Status</Label>
+                      <Select 
+                        value={formData.status} 
+                        onValueChange={(value) => setFormData({ ...formData, status: value })}
+                      >
+                        <SelectTrigger id="edit-status">
+                          <SelectValue placeholder="Selecionar status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ativo">Ativo</SelectItem>
+                          <SelectItem value="inativo">Inativo</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="docs" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <FileUpload
+                    id="edit-bi-upload"
+                    label="Bilhete de Identidade (BI)"
+                    accept="application/pdf"
+                    onChange={handleBIUpload}
+                    preview={true}
+                    bucket="driver_documents" 
+                    folder="bi"
+                    onUploadComplete={(urls) => setFormData({ ...formData, documento_bi_url: urls[0] })}
+                    existingUrls={formData.documento_bi_url ? [formData.documento_bi_url] : []}
+                  />
+                  
+                  <FileUpload
+                    id="edit-license-upload"
+                    label="Carta de Condução"
+                    accept="application/pdf"
+                    onChange={handleLicenseUpload}
+                    preview={true}
+                    bucket="driver_documents"
+                    folder="licenses"
+                    onUploadComplete={(urls) => setFormData({ ...formData, documento_carta_url: urls[0] })}
+                    existingUrls={formData.documento_carta_url ? [formData.documento_carta_url] : []}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+            
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Salvar Alterações</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -516,6 +796,41 @@ const Drivers = () => {
                     <p>{format(new Date(selectedDriver.criado_em), 'dd/MM/yyyy')}</p>
                   </div>
                 </div>
+                
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Documentos</h3>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {selectedDriver.documento_bi_url ? (
+                      <a 
+                        href={selectedDriver.documento_bi_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center rounded-md bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary-100 transition-colors border border-primary-200"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Bilhete de Identidade
+                        <Download className="h-4 w-4 ml-2" />
+                      </a>
+                    ) : (
+                      <Badge variant="outline">Sem BI</Badge>
+                    )}
+                    
+                    {selectedDriver.documento_carta_url ? (
+                      <a 
+                        href={selectedDriver.documento_carta_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center rounded-md bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary-100 transition-colors border border-primary-200"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Carta de Condução
+                        <Download className="h-4 w-4 ml-2" />
+                      </a>
+                    ) : (
+                      <Badge variant="outline">Sem Carta de Condução</Badge>
+                    )}
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -553,3 +868,4 @@ const Drivers = () => {
 };
 
 export default Drivers;
+

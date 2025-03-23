@@ -17,6 +17,7 @@ export type Database = {
           data_transacao: string
           descricao: string
           id: string
+          recibo_nome: string | null
           recibo_url: string | null
           reparacao_id: string | null
           tipo: string
@@ -29,6 +30,7 @@ export type Database = {
           data_transacao?: string
           descricao: string
           id?: string
+          recibo_nome?: string | null
           recibo_url?: string | null
           reparacao_id?: string | null
           tipo: string
@@ -41,6 +43,7 @@ export type Database = {
           data_transacao?: string
           descricao?: string
           id?: string
+          recibo_nome?: string | null
           recibo_url?: string | null
           reparacao_id?: string | null
           tipo?: string
@@ -62,6 +65,8 @@ export type Database = {
           criado_em: string
           data_contratacao: string
           documento: string
+          documento_bi_url: string | null
+          documento_carta_url: string | null
           endereco: string | null
           id: string
           nome: string
@@ -74,6 +79,8 @@ export type Database = {
           criado_em?: string
           data_contratacao: string
           documento: string
+          documento_bi_url?: string | null
+          documento_carta_url?: string | null
           endereco?: string | null
           id?: string
           nome: string
@@ -86,6 +93,8 @@ export type Database = {
           criado_em?: string
           data_contratacao?: string
           documento?: string
+          documento_bi_url?: string | null
+          documento_carta_url?: string | null
           endereco?: string | null
           id?: string
           nome?: string

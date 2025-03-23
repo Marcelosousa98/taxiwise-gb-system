@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
-import { Receipt, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Receipt, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye, ArrowUpRight, ArrowDownRight, Download, Calendar as CalendarIcon, FileText, Printer } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
 import { toast } from 'sonner';
+import { useReactToPrint } from 'react-to-print';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,6 +51,8 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FileUpload } from '@/components/FileUpload';
 
 import { supabase } from '@/integrations/supabase/client';
 
@@ -57,6 +60,8 @@ const Finance = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [finances, setFinances] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -70,8 +75,12 @@ const Finance = () => {
     descricao: "",
     valor: "",
     data_transacao: new Date(),
-    recibo_url: ""
+    recibo_url: "",
+    recibo_nome: ""
   });
+  const [reportType, setReportType] = useState<"weekly" | "monthly">("monthly");
+  const [reportDate, setReportDate] = useState<Date>(new Date());
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const fetchFinances = async () => {
     setLoading(true);
@@ -147,7 +156,8 @@ const Finance = () => {
             descricao: formData.descricao,
             valor: parseFloat(formData.valor),
             data_transacao: formData.data_transacao.toISOString(),
-            recibo_url: formData.recibo_url || null
+            recibo_url: formData.recibo_url || null,
+            recibo_nome: formData.recibo_nome || null
           }
         ])
         .select();
@@ -164,11 +174,42 @@ const Finance = () => {
         descricao: "",
         valor: "",
         data_transacao: new Date(),
-        recibo_url: ""
+        recibo_url: "",
+        recibo_nome: ""
       });
     } catch (error: any) {
       console.error('Erro ao registrar transação:', error);
       toast.error(error.message || 'Erro ao registrar transação');
+    }
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedFinance) return;
+    
+    try {
+      const { error } = await supabase
+        .from('financas')
+        .update({
+          tipo: formData.tipo,
+          categoria: formData.categoria,
+          descricao: formData.descricao,
+          valor: parseFloat(formData.valor),
+          data_transacao: formData.data_transacao.toISOString(),
+          recibo_url: formData.recibo_url || null,
+          recibo_nome: formData.recibo_nome || null
+        })
+        .eq('id', selectedFinance.id);
+        
+      if (error) throw error;
+      
+      toast.success('Transação atualizada com sucesso!');
+      setIsEditDialogOpen(false);
+      setSelectedFinance(null);
+    } catch (error: any) {
+      console.error('Erro ao atualizar transação:', error);
+      toast.error(error.message || 'Erro ao atualizar transação');
     }
   };
 
@@ -192,6 +233,20 @@ const Finance = () => {
     }
   };
 
+  const handleEdit = (finance: any) => {
+    setSelectedFinance(finance);
+    setFormData({
+      tipo: finance.tipo,
+      categoria: finance.categoria,
+      descricao: finance.descricao,
+      valor: finance.valor.toString(),
+      data_transacao: new Date(finance.data_transacao),
+      recibo_url: finance.recibo_url || "",
+      recibo_nome: finance.recibo_nome || ""
+    });
+    setIsEditDialogOpen(true);
+  };
+
   const handleView = (finance: any) => {
     setSelectedFinance(finance);
     setIsViewDialogOpen(true);
@@ -200,6 +255,16 @@ const Finance = () => {
   const handleDeleteConfirm = (finance: any) => {
     setSelectedFinance(finance);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleReceiptUpload = (files: File[], urls?: string[]) => {
+    if (urls && urls.length > 0) {
+      setFormData({ 
+        ...formData, 
+        recibo_url: urls[0], 
+        recibo_nome: files[0].name 
+      });
+    }
   };
 
   const getCategoryLabel = (category: string) => {
@@ -231,16 +296,76 @@ const Finance = () => {
     return getIncome() - getExpenses();
   };
 
+  const getReportDateRange = () => {
+    if (reportType === 'weekly') {
+      const start = startOfWeek(reportDate);
+      const end = endOfWeek(reportDate);
+      return { start, end };
+    } else {
+      const start = startOfMonth(reportDate);
+      const end = endOfMonth(reportDate);
+      return { start, end };
+    }
+  };
+
+  const getReportTransactions = () => {
+    const { start, end } = getReportDateRange();
+    
+    return finances.filter(finance => {
+      const transactionDate = new Date(finance.data_transacao);
+      return transactionDate >= start && transactionDate <= end;
+    }).sort((a, b) => new Date(a.data_transacao).getTime() - new Date(b.data_transacao).getTime());
+  };
+
+  const getReportIncome = () => {
+    return getReportTransactions()
+      .filter(finance => finance.tipo === 'entrada')
+      .reduce((sum, finance) => sum + finance.valor, 0);
+  };
+  
+  const getReportExpenses = () => {
+    return getReportTransactions()
+      .filter(finance => finance.tipo === 'saída')
+      .reduce((sum, finance) => sum + finance.valor, 0);
+  };
+  
+  const getReportBalance = () => {
+    return getReportIncome() - getReportExpenses();
+  };
+
+  const getReportTitle = () => {
+    if (reportType === 'weekly') {
+      const { start, end } = getReportDateRange();
+      return `Relatório Semanal: ${format(start, 'dd/MM/yyyy')} - ${format(end, 'dd/MM/yyyy')}`;
+    } else {
+      return `Relatório Mensal: ${format(reportDate, 'MMMM yyyy')}`;
+    }
+  };
+
+  const handlePrint = useReactToPrint({
+    content: () => reportRef.current,
+    documentTitle: `Finanças - ${getReportTitle()}`,
+    onAfterPrint: () => {
+      toast.success('Relatório gerado com sucesso!');
+    }
+  });
+
   return (
     <PageTransition>
       <PageHeader 
         title="Finanças" 
         description="Gerencie as finanças da sua empresa"
       >
-        <Button onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nova Transação
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsReportDialogOpen(true)} variant="outline">
+            <Printer className="h-4 w-4 mr-2" />
+            Gerar Relatório
+          </Button>
+          <Button onClick={() => setIsAddDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nova Transação
+          </Button>
+        </div>
       </PageHeader>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -392,6 +517,7 @@ const Finance = () => {
                 <TableHead>Categoria</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Valor</TableHead>
+                <TableHead>Recibo</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -425,6 +551,21 @@ const Finance = () => {
                     {finance.tipo === 'entrada' ? '+' : '-'}
                     {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(finance.valor)}
                   </TableCell>
+                  <TableCell>
+                    {finance.recibo_url ? (
+                      <a 
+                        href={finance.recibo_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="flex items-center text-primary hover:underline"
+                      >
+                        <FileText className="h-4 w-4 mr-1" />
+                        Ver
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -437,7 +578,7 @@ const Finance = () => {
                           <Eye className="h-4 w-4 mr-2" />
                           Ver detalhes
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(finance)}>
                           <Edit className="h-4 w-4 mr-2" />
                           Editar
                         </DropdownMenuItem>
@@ -488,114 +629,275 @@ const Finance = () => {
           </DialogHeader>
           
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="tipo">Tipo</Label>
-                  <Select 
-                    value={formData.tipo} 
-                    onValueChange={(value) => setFormData({ ...formData, tipo: value })}
-                    required
-                  >
-                    <SelectTrigger id="tipo">
-                      <SelectValue placeholder="Selecionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="entrada">Entrada</SelectItem>
-                      <SelectItem value="saída">Saída</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="categoria">Categoria</Label>
-                  <Select 
-                    value={formData.categoria} 
-                    onValueChange={(value) => setFormData({ ...formData, categoria: value })}
-                    required
-                  >
-                    <SelectTrigger id="categoria">
-                      <SelectValue placeholder="Selecionar categoria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manutenção">Manutenção</SelectItem>
-                      <SelectItem value="reparação">Reparação</SelectItem>
-                      <SelectItem value="salário">Salário</SelectItem>
-                      <SelectItem value="gasolina">Gasolina</SelectItem>
-                      <SelectItem value="seguro">Seguro</SelectItem>
-                      <SelectItem value="outro">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="info">Informações</TabsTrigger>
+                <TabsTrigger value="recibo">Recibo</TabsTrigger>
+              </TabsList>
               
-              <div className="space-y-2">
-                <Label htmlFor="descricao">Descrição</Label>
-                <Input
-                  id="descricao"
-                  placeholder="Ex: Pagamento de seguro do veículo"
-                  value={formData.descricao}
-                  onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  required
-                />
-              </div>
+              <TabsContent value="info" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="tipo">Tipo</Label>
+                      <Select 
+                        value={formData.tipo} 
+                        onValueChange={(value) => setFormData({ ...formData, tipo: value })}
+                        required
+                      >
+                        <SelectTrigger id="tipo">
+                          <SelectValue placeholder="Selecionar tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="entrada">Entrada</SelectItem>
+                          <SelectItem value="saída">Saída</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="categoria">Categoria</Label>
+                      <Select 
+                        value={formData.categoria} 
+                        onValueChange={(value) => setFormData({ ...formData, categoria: value })}
+                        required
+                      >
+                        <SelectTrigger id="categoria">
+                          <SelectValue placeholder="Selecionar categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manutenção">Manutenção</SelectItem>
+                          <SelectItem value="reparação">Reparação</SelectItem>
+                          <SelectItem value="salário">Salário</SelectItem>
+                          <SelectItem value="gasolina">Gasolina</SelectItem>
+                          <SelectItem value="seguro">Seguro</SelectItem>
+                          <SelectItem value="outro">Outro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="descricao">Descrição</Label>
+                    <Input
+                      id="descricao"
+                      placeholder="Ex: Pagamento de seguro do veículo"
+                      value={formData.descricao}
+                      onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="valor">Valor (AOA)</Label>
+                      <Input
+                        id="valor"
+                        type="number"
+                        placeholder="0.00"
+                        value={formData.valor}
+                        onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Data</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            {formData.data_transacao ? (
+                              format(formData.data_transacao, "dd/MM/yyyy")
+                            ) : (
+                              <span>Selecionar data</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={formData.data_transacao}
+                            onSelect={(date) => date && setFormData({ ...formData, data_transacao: date })}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="valor">Valor (AOA)</Label>
-                  <Input
-                    id="valor"
-                    type="number"
-                    placeholder="0.00"
-                    value={formData.valor}
-                    onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
-                    required
+              <TabsContent value="recibo" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <FileUpload
+                    id="receipt-upload"
+                    label="Recibo (PDF ou Imagem)"
+                    accept="application/pdf,image/*"
+                    onChange={handleReceiptUpload}
+                    preview={true}
+                    bucket="finance_receipts"
+                    folder="receipts"
+                    onUploadComplete={(urls, fileNames) => setFormData({ 
+                      ...formData, 
+                      recibo_url: urls[0],
+                      recibo_nome: fileNames[0]
+                    })}
                   />
                 </div>
-                
-                <div className="space-y-2">
-                  <Label>Data</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-left font-normal"
-                      >
-                        {formData.data_transacao ? (
-                          format(formData.data_transacao, "dd/MM/yyyy")
-                        ) : (
-                          <span>Selecionar data</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={formData.data_transacao}
-                        onSelect={(date) => date && setFormData({ ...formData, data_transacao: date })}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="recibo">URL do Recibo (opcional)</Label>
-                <Input
-                  id="recibo"
-                  placeholder="Ex: https://exemplo.com/recibo.pdf"
-                  value={formData.recibo_url}
-                  onChange={(e) => setFormData({ ...formData, recibo_url: e.target.value })}
-                />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
             
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setIsAddDialogOpen(false)}>
                 Cancelar
               </Button>
               <Button type="submit">Registrar Transação</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Finance Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Editar Transação</DialogTitle>
+            <DialogDescription>
+              Edite os detalhes da transação financeira.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <form onSubmit={handleUpdate} className="space-y-4">
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="info">Informações</TabsTrigger>
+                <TabsTrigger value="recibo">Recibo</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="info" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-tipo">Tipo</Label>
+                      <Select 
+                        value={formData.tipo} 
+                        onValueChange={(value) => setFormData({ ...formData, tipo: value })}
+                        required
+                      >
+                        <SelectTrigger id="edit-tipo">
+                          <SelectValue placeholder="Selecionar tipo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="entrada">Entrada</SelectItem>
+                          <SelectItem value="saída">Saída</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-categoria">Categoria</Label>
+                      <Select 
+                        value={formData.categoria} 
+                        onValueChange={(value) => setFormData({ ...formData, categoria: value })}
+                        required
+                      >
+                        <SelectTrigger id="edit-categoria">
+                          <SelectValue placeholder="Selecionar categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manutenção">Manutenção</SelectItem>
+                          <SelectItem value="reparação">Reparação</SelectItem>
+                          <SelectItem value="salário">Salário</SelectItem>
+                          <SelectItem value="gasolina">Gasolina</SelectItem>
+                          <SelectItem value="seguro">Seguro</SelectItem>
+                          <SelectItem value="outro">Outro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-descricao">Descrição</Label>
+                    <Input
+                      id="edit-descricao"
+                      placeholder="Ex: Pagamento de seguro do veículo"
+                      value={formData.descricao}
+                      onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-valor">Valor (AOA)</Label>
+                      <Input
+                        id="edit-valor"
+                        type="number"
+                        placeholder="0.00"
+                        value={formData.valor}
+                        onChange={(e) => setFormData({ ...formData, valor: e.target.value })}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Data</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            {formData.data_transacao ? (
+                              format(formData.data_transacao, "dd/MM/yyyy")
+                            ) : (
+                              <span>Selecionar data</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={formData.data_transacao}
+                            onSelect={(date) => date && setFormData({ ...formData, data_transacao: date })}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="recibo" className="space-y-4 mt-4">
+                <div className="grid gap-4">
+                  <FileUpload
+                    id="edit-receipt-upload"
+                    label="Recibo (PDF ou Imagem)"
+                    accept="application/pdf,image/*"
+                    onChange={handleReceiptUpload}
+                    preview={true}
+                    bucket="finance_receipts"
+                    folder="receipts"
+                    onUploadComplete={(urls, fileNames) => setFormData({ 
+                      ...formData, 
+                      recibo_url: urls[0],
+                      recibo_nome: fileNames[0]
+                    })}
+                    existingUrls={formData.recibo_url ? [formData.recibo_url] : []}
+                  />
+                </div>
+              </TabsContent>
+            </Tabs>
+            
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit">Salvar Alterações</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -653,14 +955,46 @@ const Finance = () => {
                 {selectedFinance.recibo_url && (
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Recibo</h3>
-                    <a 
-                      href={selectedFinance.recibo_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      Ver recibo
-                    </a>
+                    <div className="mt-2">
+                      {selectedFinance.recibo_url.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+                        <div className="border rounded-md p-2">
+                          <img 
+                            src={selectedFinance.recibo_url} 
+                            alt="Recibo" 
+                            className="max-h-48 mx-auto object-contain rounded" 
+                          />
+                          <div className="mt-2 text-center">
+                            <a 
+                              href={selectedFinance.recibo_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-primary hover:underline"
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              Baixar imagem
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border rounded-md p-4 flex items-center justify-center">
+                          <div className="text-center">
+                            <FileText className="h-8 w-8 text-primary mx-auto mb-2" />
+                            <p className="text-sm mb-2">
+                              {selectedFinance.recibo_nome || "Documento PDF"}
+                            </p>
+                            <a 
+                              href={selectedFinance.recibo_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-primary hover:underline"
+                            >
+                              <Download className="h-4 w-4 mr-1" />
+                              Baixar PDF
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 
@@ -673,6 +1007,180 @@ const Finance = () => {
           )}
         </DialogContent>
       </Dialog>
+      
+      {/* Generate Report Dialog */}
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Gerar Relatório Financeiro</DialogTitle>
+            <DialogDescription>
+              Selecione o tipo de relatório e o período desejado.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="report-type">Tipo de Relatório</Label>
+                <Select 
+                  value={reportType} 
+                  onValueChange={(value: "weekly" | "monthly") => setReportType(value)}
+                >
+                  <SelectTrigger id="report-type">
+                    <SelectValue placeholder="Selecionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="weekly">Semanal</SelectItem>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Período</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {reportType === 'weekly' 
+                        ? format(reportDate, "dd/MM/yyyy") + ' (semana)'
+                        : format(reportDate, "MMMM yyyy")}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={reportDate}
+                      onSelect={(date) => date && setReportDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            
+            <div className="border rounded-md p-4">
+              <h3 className="font-medium mb-2">Prévia do Relatório</h3>
+              <p className="text-sm text-muted-foreground mb-4">{getReportTitle()}</p>
+              
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="border rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Receitas</p>
+                  <p className="text-green-600 font-medium">
+                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportIncome())}
+                  </p>
+                </div>
+                <div className="border rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Despesas</p>
+                  <p className="text-red-600 font-medium">
+                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportExpenses())}
+                  </p>
+                </div>
+                <div className="border rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Saldo</p>
+                  <p className={getReportBalance() >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportBalance())}
+                  </p>
+                </div>
+              </div>
+              
+              <p className="text-sm">{getReportTransactions().length} transações no período</p>
+            </div>
+            
+            <div className="pt-4 text-right space-x-2">
+              <Button variant="outline" onClick={() => setIsReportDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handlePrint}>
+                <Printer className="h-4 w-4 mr-2" />
+                Gerar PDF
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Report Print Template (hidden) */}
+      <div className="hidden">
+        <div ref={reportRef} className="p-8 bg-white">
+          <div className="mb-8 text-center">
+            <h1 className="text-2xl font-bold mb-2">Relatório Financeiro</h1>
+            <p className="text-lg">{getReportTitle()}</p>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-8 mb-8">
+            <div className="border rounded-lg p-4 text-center">
+              <h2 className="text-lg font-medium mb-2">Receitas</h2>
+              <p className="text-xl text-green-600 font-bold">
+                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportIncome())}
+              </p>
+            </div>
+            <div className="border rounded-lg p-4 text-center">
+              <h2 className="text-lg font-medium mb-2">Despesas</h2>
+              <p className="text-xl text-red-600 font-bold">
+                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportExpenses())}
+              </p>
+            </div>
+            <div className="border rounded-lg p-4 text-center">
+              <h2 className="text-lg font-medium mb-2">Saldo</h2>
+              <p className={`text-xl font-bold ${getReportBalance() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportBalance())}
+              </p>
+            </div>
+          </div>
+          
+          <h2 className="text-xl font-bold mb-4">Detalhes das Transações</h2>
+          
+          {getReportTransactions().length > 0 ? (
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border p-2 text-left">Data</th>
+                  <th className="border p-2 text-left">Descrição</th>
+                  <th className="border p-2 text-left">Categoria</th>
+                  <th className="border p-2 text-left">Tipo</th>
+                  <th className="border p-2 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getReportTransactions().map((finance, index) => (
+                  <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="border p-2">
+                      {format(new Date(finance.data_transacao), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="border p-2 font-medium">{finance.descricao}</td>
+                    <td className="border p-2">{getCategoryLabel(finance.categoria)}</td>
+                    <td className="border p-2">
+                      {finance.tipo === 'entrada' ? 'Entrada' : 'Saída'}
+                    </td>
+                    <td className={`border p-2 text-right ${finance.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'} font-medium`}>
+                      {finance.tipo === 'entrada' ? '+' : '-'}
+                      {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(finance.valor)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-100 font-bold">
+                  <td colSpan={4} className="border p-2 text-right">Total:</td>
+                  <td className={`border p-2 text-right ${getReportBalance() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {new Intl.NumberFormat('pt-AO', { style: 'currency', currency: 'AOA' }).format(getReportBalance())}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : (
+            <p className="text-center py-4 border">Nenhuma transação encontrada no período selecionado.</p>
+          )}
+          
+          <div className="mt-8 text-center text-sm text-gray-500">
+            <p>Relatório gerado em {format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+          </div>
+        </div>
+      </div>
       
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -711,3 +1219,4 @@ const Finance = () => {
 };
 
 export default Finance;
+
