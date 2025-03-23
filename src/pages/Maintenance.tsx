@@ -1,11 +1,10 @@
-
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, addMonths, isAfter, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
   Plus, Filter, Search, Car as CarIcon, Calendar as CalendarIcon, AlertTriangle,
-  Check, X, FileText, ChevronDown, ChevronUp
+  Check, X, FileText, ChevronDown, ChevronUp, Car
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
