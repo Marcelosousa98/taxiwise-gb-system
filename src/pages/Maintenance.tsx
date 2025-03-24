@@ -1,18 +1,19 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { format, addMonths, isAfter, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
   Plus, Filter, Search, Car as CarIcon, Calendar as CalendarIcon, AlertTriangle,
-  Check, X, FileText, ChevronDown, ChevronUp, Car
+  Check, X, FileText, ChevronDown, ChevronUp, Car, Trash2, Edit
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { toast } from 'sonner';
 
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState } from '@/components/EmptyState';
-import { FileUpload } from '@/components/FileUpload';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,12 +33,12 @@ import {
   DialogFooter, 
   DialogHeader, 
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { 
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -55,9 +56,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
-import { maintenances, vehicles, getVehicleById } from '@/data/mockData';
-import { cn } from "@/lib/utils";
+import { Label } from '@/components/ui/label';
+
+import { supabase } from '@/integrations/supabase/client';
 
 const MaintenancePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,9 +71,15 @@ const MaintenancePage = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(!!maintenanceId);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [maintenances, setMaintenances] = useState<any[]>([]);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   
   // Form state for adding/editing
   const [formData, setFormData] = useState({
+    id: "",
     vehicleId: "",
     date: new Date(),
     description: "",
@@ -81,16 +88,81 @@ const MaintenancePage = () => {
     cost: "",
   });
   
-  // State for the maintenance being viewed
-  const [viewMaintenance, setViewMaintenance] = useState(
-    maintenanceId ? maintenances.find(m => m.id === maintenanceId) : null
-  );
+  // State for the maintenance being viewed or edited
+  const [selectedMaintenance, setSelectedMaintenance] = useState<any>(null);
+
+  // Fetch real vehicles from Supabase
+  const fetchVehicles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('veiculos')
+        .select('*')
+        .eq('status', 'ativo');
+        
+      if (error) throw error;
+      setVehicles(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar veículos:', error);
+      toast.error('Não foi possível carregar os veículos');
+    }
+  };
+
+  // Fetch real maintenances from Supabase
+  const fetchMaintenances = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('manutencoes')
+        .select('*, veiculos!inner(*)')
+        .order('data_manutencao', { ascending: false });
+        
+      if (error) throw error;
+      setMaintenances(data || []);
+      
+      // If viewing a maintenance by ID, set it as the selected one
+      if (maintenanceId && data) {
+        const maintenance = data.find(m => m.id === maintenanceId);
+        if (maintenance) {
+          setSelectedMaintenance(maintenance);
+          setIsViewDialogOpen(true);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao buscar manutenções:', error);
+      toast.error('Não foi possível carregar as manutenções');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVehicles();
+    fetchMaintenances();
+
+    // Setup real-time subscription
+    const channel = supabase
+      .channel('table-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'manutencoes'
+        },
+        () => {
+          fetchMaintenances();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [maintenanceId]);
   
   // Filter maintenances based on active tab, search, and filters
   const filteredMaintenances = maintenances
     .filter(maintenance => {
-      const vehicle = getVehicleById(maintenance.vehicleId);
-      
       // Filter by tab
       if (activeTab === "upcoming" && maintenance.status !== "agendado") return false;
       if (activeTab === "completed" && maintenance.status !== "completo") return false;
@@ -99,10 +171,10 @@ const MaintenancePage = () => {
       // Filter by search term
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
-        const vehicleMatch = vehicle ? 
-          `${vehicle.brand} ${vehicle.model} ${vehicle.licensePlate}`.toLowerCase().includes(searchLower) : 
+        const vehicleMatch = maintenance.veiculos ? 
+          `${maintenance.veiculos.modelo} ${maintenance.veiculos.placa}`.toLowerCase().includes(searchLower) : 
           false;
-        const descriptionMatch = maintenance.description.toLowerCase().includes(searchLower);
+        const descriptionMatch = maintenance.descricao.toLowerCase().includes(searchLower);
         
         if (!vehicleMatch && !descriptionMatch) return false;
       }
@@ -112,7 +184,7 @@ const MaintenancePage = () => {
       
       // Filter by date
       if (selectedDate) {
-        const maintenanceDate = new Date(maintenance.date);
+        const maintenanceDate = new Date(maintenance.data_manutencao);
         return (
           maintenanceDate.getDate() === selectedDate.getDate() &&
           maintenanceDate.getMonth() === selectedDate.getMonth() &&
@@ -122,30 +194,138 @@ const MaintenancePage = () => {
       
       return true;
     })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .sort((a, b) => new Date(b.data_manutencao).getTime() - new Date(a.data_manutencao).getTime());
   
-  // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  // Handle form submission for adding or editing
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    toast.success("Manutenção agendada com sucesso!");
-    setIsAddDialogOpen(false);
-    
-    // Reset form
-    setFormData({
-      vehicleId: "",
-      date: new Date(),
-      description: "",
-      notes: "",
-      status: "agendado",
-      cost: "",
-    });
+    try {
+      const maintenanceData = {
+        veiculo_id: formData.vehicleId,
+        descricao: formData.description,
+        notas: formData.notes || null,
+        data_manutencao: formData.date.toISOString(),
+        custo: formData.cost ? parseFloat(formData.cost) : null,
+        status: formData.status
+      };
+      
+      let result;
+      
+      if (isEditDialogOpen) {
+        // Update existing maintenance
+        result = await supabase
+          .from('manutencoes')
+          .update(maintenanceData)
+          .eq('id', formData.id)
+          .select();
+          
+        if (result.error) throw result.error;
+        toast.success('Manutenção atualizada com sucesso!');
+        setIsEditDialogOpen(false);
+      } else {
+        // Add new maintenance
+        result = await supabase
+          .from('manutencoes')
+          .insert([maintenanceData])
+          .select();
+          
+        if (result.error) throw result.error;
+        toast.success('Manutenção agendada com sucesso!');
+        setIsAddDialogOpen(false);
+      }
+      
+      // Reset form
+      setFormData({
+        id: "",
+        vehicleId: "",
+        date: new Date(),
+        description: "",
+        notes: "",
+        status: "agendado",
+        cost: "",
+      });
+    } catch (error: any) {
+      console.error('Erro ao salvar manutenção:', error);
+      toast.error(error.message || 'Erro ao salvar manutenção');
+    }
   };
   
   // Handle viewing a maintenance
-  const handleViewMaintenance = (maintenance: typeof maintenances[0]) => {
-    setViewMaintenance(maintenance);
+  const handleViewMaintenance = (maintenance: any) => {
+    setSelectedMaintenance(maintenance);
     setIsViewDialogOpen(true);
+  };
+  
+  // Handle editing a maintenance
+  const handleEditMaintenance = (maintenance: any) => {
+    setFormData({
+      id: maintenance.id,
+      vehicleId: maintenance.veiculo_id,
+      date: new Date(maintenance.data_manutencao),
+      description: maintenance.descricao,
+      notes: maintenance.notas || "",
+      status: maintenance.status,
+      cost: maintenance.custo ? String(maintenance.custo) : "",
+    });
+    setIsEditDialogOpen(true);
+  };
+  
+  // Handle deleting a maintenance
+  const handleDeleteMaintenance = (maintenance: any) => {
+    setSelectedMaintenance(maintenance);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  // Confirm and execute maintenance deletion
+  const confirmDeleteMaintenance = async () => {
+    if (!selectedMaintenance) return;
+    
+    try {
+      const { error } = await supabase
+        .from('manutencoes')
+        .delete()
+        .eq('id', selectedMaintenance.id);
+        
+      if (error) throw error;
+      
+      toast.success('Manutenção excluída com sucesso!');
+      setIsDeleteDialogOpen(false);
+      setSelectedMaintenance(null);
+
+      // If we were viewing the maintenance, close the view dialog
+      if (isViewDialogOpen) {
+        setIsViewDialogOpen(false);
+      }
+    } catch (error: any) {
+      console.error('Erro ao excluir manutenção:', error);
+      toast.error(error.message || 'Erro ao excluir manutenção');
+    }
+  };
+  
+  // Mark maintenance as complete
+  const markMaintenanceAsComplete = async (maintenance: any) => {
+    try {
+      const { error } = await supabase
+        .from('manutencoes')
+        .update({ status: 'completo' })
+        .eq('id', maintenance.id);
+        
+      if (error) throw error;
+      
+      toast.success('Manutenção marcada como completa!');
+      
+      // If viewing details, update the selected maintenance
+      if (isViewDialogOpen && selectedMaintenance?.id === maintenance.id) {
+        setSelectedMaintenance({
+          ...selectedMaintenance,
+          status: 'completo'
+        });
+      }
+    } catch (error: any) {
+      console.error('Erro ao atualizar status da manutenção:', error);
+      toast.error(error.message || 'Erro ao atualizar status');
+    }
   };
   
   // Check if maintenance is overdue
@@ -154,10 +334,19 @@ const MaintenancePage = () => {
   };
   
   // Check if vehicle needs maintenance soon
-  const needsMaintenanceSoon = (lastMaintenance?: Date) => {
-    if (!lastMaintenance) return true;
+  const needsMaintenanceSoon = (vehicleId: string) => {
+    const vehicleMaintenances = maintenances.filter(m => 
+      m.veiculo_id === vehicleId && m.status === 'completo'
+    );
     
-    const twoMonthsAfterLastMaintenance = addMonths(new Date(lastMaintenance), 2);
+    if (vehicleMaintenances.length === 0) return true;
+    
+    // Find the most recent maintenance
+    const lastMaintenance = vehicleMaintenances.reduce((latest, current) => {
+      return new Date(current.data_manutencao) > new Date(latest.data_manutencao) ? current : latest;
+    }, vehicleMaintenances[0]);
+    
+    const twoMonthsAfterLastMaintenance = addMonths(new Date(lastMaintenance.data_manutencao), 2);
     return isAfter(new Date(), twoMonthsAfterLastMaintenance);
   };
 
@@ -291,7 +480,11 @@ const MaintenancePage = () => {
         </TabsList>
         
         <TabsContent value={activeTab} className="space-y-4">
-          {filteredMaintenances.length > 0 ? (
+          {loading ? (
+            <div className="flex justify-center p-8">
+              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+            </div>
+          ) : filteredMaintenances.length > 0 ? (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -304,57 +497,71 @@ const MaintenancePage = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMaintenances.map((maintenance) => {
-                    const vehicle = getVehicleById(maintenance.vehicleId);
-                    
-                    return (
-                      <TableRow key={maintenance.id}>
-                        <TableCell className="font-medium">
-                          {vehicle ? (
-                            <div className="flex items-center">
-                              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mr-2">
-                                <Car className="h-4 w-4 text-primary" />
-                              </div>
-                              <div>
-                                <div>{vehicle.brand} {vehicle.model}</div>
-                                <div className="text-xs text-muted-foreground">{vehicle.licensePlate}</div>
-                              </div>
+                  {filteredMaintenances.map((maintenance) => (
+                    <TableRow key={maintenance.id}>
+                      <TableCell className="font-medium">
+                        {maintenance.veiculos ? (
+                          <div className="flex items-center">
+                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mr-2">
+                              <Car className="h-4 w-4 text-primary" />
                             </div>
-                          ) : (
-                            "Veículo não encontrado"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(maintenance.date), "dd/MM/yyyy")}
-                        </TableCell>
-                        <TableCell>{maintenance.description}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={maintenance.status} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <ChevronDown className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem 
-                                onClick={() => handleViewMaintenance(maintenance)}
+                            <div>
+                              <div>{maintenance.veiculos.modelo}</div>
+                              <div className="text-xs text-muted-foreground">{maintenance.veiculos.placa}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          "Veículo não encontrado"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {format(new Date(maintenance.data_manutencao), "dd/MM/yyyy")}
+                      </TableCell>
+                      <TableCell>{maintenance.descricao}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={maintenance.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem 
+                              onClick={() => handleViewMaintenance(maintenance)}
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              Ver detalhes
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => handleEditMaintenance(maintenance)}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Editar
+                            </DropdownMenuItem>
+                            {maintenance.status !== 'completo' && (
+                              <DropdownMenuItem
+                                onClick={() => markMaintenanceAsComplete(maintenance)}
                               >
-                                Ver detalhes
+                                <Check className="h-4 w-4 mr-2" />
+                                Marcar como completa
                               </DropdownMenuItem>
-                              <DropdownMenuItem>Editar</DropdownMenuItem>
-                              <DropdownMenuItem>Marcar como completa</DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive">
-                                Cancelar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => handleDeleteMaintenance(maintenance)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -380,11 +587,19 @@ const MaintenancePage = () => {
         </TabsContent>
       </Tabs>
       
-      {/* Add Maintenance Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+      {/* Add/Edit Maintenance Dialog */}
+      <Dialog 
+        open={isAddDialogOpen || isEditDialogOpen} 
+        onOpenChange={(open) => {
+          if (isAddDialogOpen) setIsAddDialogOpen(open);
+          if (isEditDialogOpen) setIsEditDialogOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Agendar Nova Manutenção</DialogTitle>
+            <DialogTitle>
+              {isEditDialogOpen ? "Editar Manutenção" : "Agendar Nova Manutenção"}
+            </DialogTitle>
             <DialogDescription>
               Preencha os detalhes da manutenção do veículo.
             </DialogDescription>
@@ -393,9 +608,7 @@ const MaintenancePage = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label htmlFor="vehicle" className="block text-sm font-medium">
-                  Veículo
-                </label>
+                <Label htmlFor="vehicle">Veículo</Label>
                 <Select 
                   value={formData.vehicleId} 
                   onValueChange={(value) => setFormData({ ...formData, vehicleId: value })}
@@ -408,11 +621,11 @@ const MaintenancePage = () => {
                     {vehicles.map((vehicle) => (
                       <SelectItem key={vehicle.id} value={vehicle.id}>
                         <div className="flex items-center gap-2">
-                          <span>{vehicle.brand} {vehicle.model}</span>
+                          <span>{vehicle.modelo}</span>
                           <span className="text-xs text-muted-foreground">
-                            ({vehicle.licensePlate})
+                            ({vehicle.placa})
                           </span>
-                          {needsMaintenanceSoon(vehicle.lastMaintenance) && (
+                          {needsMaintenanceSoon(vehicle.id) && (
                             <AlertTriangle className="h-3 w-3 text-amber-500" />
                           )}
                         </div>
@@ -423,9 +636,7 @@ const MaintenancePage = () => {
               </div>
               
               <div className="space-y-2">
-                <label className="block text-sm font-medium">
-                  Data
-                </label>
+                <Label>Data</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -454,9 +665,7 @@ const MaintenancePage = () => {
             </div>
             
             <div className="space-y-2">
-              <label htmlFor="description" className="block text-sm font-medium">
-                Descrição
-              </label>
+              <Label htmlFor="description">Descrição</Label>
               <Input
                 id="description"
                 value={formData.description}
@@ -468,9 +677,7 @@ const MaintenancePage = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label htmlFor="status" className="block text-sm font-medium">
-                  Status
-                </label>
+                <Label htmlFor="status">Status</Label>
                 <Select 
                   value={formData.status} 
                   onValueChange={(value) => setFormData({ ...formData, status: value })}
@@ -482,14 +689,13 @@ const MaintenancePage = () => {
                     <SelectItem value="agendado">Agendado</SelectItem>
                     <SelectItem value="pendente">Pendente</SelectItem>
                     <SelectItem value="completo">Completo</SelectItem>
+                    <SelectItem value="atrasado">Atrasado</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               
               <div className="space-y-2">
-                <label htmlFor="cost" className="block text-sm font-medium">
-                  Custo (AO)
-                </label>
+                <Label htmlFor="cost">Custo (AO)</Label>
                 <Input
                   id="cost"
                   type="number"
@@ -501,9 +707,7 @@ const MaintenancePage = () => {
             </div>
             
             <div className="space-y-2">
-              <label htmlFor="notes" className="block text-sm font-medium">
-                Notas
-              </label>
+              <Label htmlFor="notes">Notas</Label>
               <Textarea
                 id="notes"
                 value={formData.notes}
@@ -514,10 +718,19 @@ const MaintenancePage = () => {
             </div>
             
             <DialogFooter>
-              <Button variant="outline" type="button" onClick={() => setIsAddDialogOpen(false)}>
+              <Button 
+                variant="outline" 
+                type="button" 
+                onClick={() => {
+                  if (isAddDialogOpen) setIsAddDialogOpen(false);
+                  if (isEditDialogOpen) setIsEditDialogOpen(false);
+                }}
+              >
                 Cancelar
               </Button>
-              <Button type="submit">Agendar Manutenção</Button>
+              <Button type="submit">
+                {isEditDialogOpen ? "Salvar Alterações" : "Agendar Manutenção"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -526,13 +739,13 @@ const MaintenancePage = () => {
       {/* View Maintenance Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
-          {viewMaintenance && (
+          {selectedMaintenance && (
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center">
                   <span>Detalhes da Manutenção</span>
                   <StatusBadge 
-                    status={viewMaintenance.status} 
+                    status={selectedMaintenance.status} 
                     className="ml-2" 
                   />
                 </DialogTitle>
@@ -542,40 +755,37 @@ const MaintenancePage = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Veículo</h3>
-                    {(() => {
-                      const vehicle = getVehicleById(viewMaintenance.vehicleId);
-                      return (
-                        <p className="font-semibold">
-                          {vehicle ? `${vehicle.brand} ${vehicle.model} (${vehicle.licensePlate})` : "Veículo não encontrado"}
-                        </p>
-                      );
-                    })()}
+                    <p className="font-semibold">
+                      {selectedMaintenance.veiculos ? 
+                        `${selectedMaintenance.veiculos.modelo} (${selectedMaintenance.veiculos.placa})` : 
+                        "Veículo não encontrado"}
+                    </p>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Data</h3>
                     <p className="font-semibold">
-                      {format(new Date(viewMaintenance.date), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                      {format(new Date(selectedMaintenance.data_manutencao), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                     </p>
                   </div>
                 </div>
                 
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Descrição</h3>
-                  <p>{viewMaintenance.description}</p>
+                  <p>{selectedMaintenance.descricao}</p>
                 </div>
                 
-                {viewMaintenance.cost && (
+                {selectedMaintenance.custo !== null && (
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Custo</h3>
-                    <p className="font-semibold">{new Intl.NumberFormat('pt-AO').format(viewMaintenance.cost)} AO</p>
+                    <p className="font-semibold">{new Intl.NumberFormat('pt-AO').format(selectedMaintenance.custo)} AO</p>
                   </div>
                 )}
                 
-                {viewMaintenance.notes && (
+                {selectedMaintenance.notas && (
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Notas</h3>
-                    <p>{viewMaintenance.notes}</p>
+                    <p>{selectedMaintenance.notas}</p>
                   </div>
                 )}
                 
@@ -586,15 +796,23 @@ const MaintenancePage = () => {
                     </Button>
                     
                     <div className="space-x-2">
-                      {viewMaintenance.status !== "completo" && (
-                        <Button variant="outline" className="gap-2">
+                      {selectedMaintenance.status !== "completo" && (
+                        <Button 
+                          variant="outline" 
+                          className="gap-2"
+                          onClick={() => markMaintenanceAsComplete(selectedMaintenance)}
+                        >
                           <Check className="h-4 w-4" />
                           Marcar como Completa
                         </Button>
                       )}
-                      <Button variant="default" className="gap-2">
-                        <FileText className="h-4 w-4" />
-                        Gerar Relatório
+                      <Button 
+                        variant="default" 
+                        className="gap-2"
+                        onClick={() => handleEditMaintenance(selectedMaintenance)}
+                      >
+                        <Edit className="h-4 w-4" />
+                        Editar
                       </Button>
                     </div>
                   </div>
@@ -602,6 +820,39 @@ const MaintenancePage = () => {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir esta manutenção? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="bg-muted p-3 rounded-md">
+            {selectedMaintenance && selectedMaintenance.veiculos && (
+              <div>
+                <p className="font-medium">{selectedMaintenance.descricao}</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedMaintenance.veiculos.modelo} ({selectedMaintenance.veiculos.placa}) - 
+                  {format(new Date(selectedMaintenance.data_manutencao), " dd/MM/yyyy")}
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteMaintenance}>
+              Excluir
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageTransition>
