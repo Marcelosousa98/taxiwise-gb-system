@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
@@ -103,7 +102,6 @@ const Finance = () => {
   useEffect(() => {
     fetchFinances();
 
-    // Configurar assinatura em tempo real
     const channel = supabase
       .channel('table-db-changes')
       .on(
@@ -125,17 +123,14 @@ const Finance = () => {
   }, []);
 
   const filteredFinances = finances.filter(finance => {
-    // Filtrar por termo de pesquisa
     if (searchTerm && !finance.descricao.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     
-    // Filtrar por tipo
     if (typeFilter && finance.tipo !== typeFilter) {
       return false;
     }
     
-    // Filtrar por categoria
     if (categoryFilter && finance.categoria !== categoryFilter) {
       return false;
     }
@@ -167,7 +162,6 @@ const Finance = () => {
       toast.success('Transação financeira registrada com sucesso!');
       setIsAddDialogOpen(false);
       
-      // Resetar formulário
       setFormData({
         tipo: "saída",
         categoria: "outro",
@@ -343,7 +337,6 @@ const Finance = () => {
   };
 
   const handlePrint = useReactToPrint({
-    content: () => reportRef.current,
     documentTitle: `Finanças - ${getReportTitle()}`,
     onAfterPrint: () => {
       toast.success('Relatório gerado com sucesso!');
@@ -1094,7 +1087,9 @@ const Finance = () => {
               <Button variant="outline" onClick={() => setIsReportDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handlePrint}>
+              <Button onClick={() => handlePrint({ 
+                content: () => reportRef.current 
+              })}>
                 <Printer className="h-4 w-4 mr-2" />
                 Gerar PDF
               </Button>
@@ -1219,4 +1214,3 @@ const Finance = () => {
 };
 
 export default Finance;
-
