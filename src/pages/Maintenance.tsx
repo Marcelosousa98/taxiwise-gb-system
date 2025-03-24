@@ -5,7 +5,8 @@ import { format, addMonths, isAfter, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
   Plus, Filter, Search, Car as CarIcon, Calendar as CalendarIcon, AlertTriangle,
-  Check, X, FileText, ChevronDown, ChevronUp, Car, Trash2, Edit
+  Check, X, FileText, ChevronDown, ChevronUp, Car, Trash2, Edit,
+  MoreHorizontal, Eye
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -111,17 +112,17 @@ const MaintenancePage = () => {
   const fetchMaintenances = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data: manutencoes, error } = await supabase
         .from('manutencoes')
-        .select('*, veiculos!inner(*)')
+        .select('*, veiculos(*)')
         .order('data_manutencao', { ascending: false });
         
       if (error) throw error;
-      setMaintenances(data || []);
+      setMaintenances(manutencoes || []);
       
       // If viewing a maintenance by ID, set it as the selected one
-      if (maintenanceId && data) {
-        const maintenance = data.find(m => m.id === maintenanceId);
+      if (maintenanceId && manutencoes) {
+        const maintenance = manutencoes.find(m => m.id === maintenanceId);
         if (maintenance) {
           setSelectedMaintenance(maintenance);
           setIsViewDialogOpen(true);

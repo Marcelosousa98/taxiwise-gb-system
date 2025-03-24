@@ -59,6 +59,50 @@ export type Database = {
           },
         ]
       }
+      manutencoes: {
+        Row: {
+          atualizado_em: string
+          criado_em: string
+          custo: number | null
+          data_manutencao: string
+          descricao: string
+          id: string
+          notas: string | null
+          status: string
+          veiculo_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          criado_em?: string
+          custo?: number | null
+          data_manutencao?: string
+          descricao: string
+          id?: string
+          notas?: string | null
+          status?: string
+          veiculo_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          criado_em?: string
+          custo?: number | null
+          data_manutencao?: string
+          descricao?: string
+          id?: string
+          notas?: string | null
+          status?: string
+          veiculo_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manutencoes_veiculo_id_fkey"
+            columns: ["veiculo_id"]
+            isOneToOne: false
+            referencedRelation: "veiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       motoristas: {
         Row: {
           atualizado_em: string
