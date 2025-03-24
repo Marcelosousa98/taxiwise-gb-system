@@ -1083,7 +1083,7 @@ const Finance = () => {
               <Button variant="outline" onClick={() => setIsReportDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={() => handlePrint(reportRef.current)}>
+              <Button onClick={() => handlePrint(() => reportRef.current)}>
                 <Printer className="h-4 w-4 mr-2" />
                 Gerar PDF
               </Button>
