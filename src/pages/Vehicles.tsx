@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
@@ -53,6 +52,7 @@ const Vehicles = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isAssignDriverDialogOpen, setIsAssignDriverDialogOpen] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [vehiclesWithDrivers, setVehiclesWithDrivers] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
@@ -79,11 +79,37 @@ const Vehicles = () => {
         
       if (error) throw error;
       setVehicles(data || []);
+      
+      if (data && data.length > 0) {
+        await fetchDriversForVehicles(data);
+      }
     } catch (error) {
       console.error('Erro ao buscar veículos:', error);
       toast.error('Erro ao buscar veículos');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDriversForVehicles = async (vehicles: any[]) => {
+    try {
+      const { data: drivers, error } = await supabase
+        .from('motoristas')
+        .select('*');
+        
+      if (error) throw error;
+      
+      const vehiclesWithDriverInfo = vehicles.map(vehicle => {
+        const assignedDriver = drivers?.find(driver => driver.veiculo_id === vehicle.id);
+        return {
+          ...vehicle,
+          driver: assignedDriver || null
+        };
+      });
+      
+      setVehiclesWithDrivers(vehiclesWithDriverInfo);
+    } catch (error) {
+      console.error('Erro ao buscar motoristas para veículos:', error);
     }
   };
 
@@ -124,7 +150,6 @@ const Vehicles = () => {
   useEffect(() => {
     fetchVehicles();
 
-    // Configurar assinatura em tempo real
     const channel = supabase
       .channel('table-db-changes')
       .on(
@@ -149,6 +174,7 @@ const Vehicles = () => {
           if (selectedVehicle) {
             fetchCurrentDriver(selectedVehicle.id);
           }
+          fetchVehicles();
         }
       )
       .subscribe();
@@ -167,13 +193,11 @@ const Vehicles = () => {
     }
   }, [isAssignDriverDialogOpen, selectedVehicle]);
 
-  const filteredVehicles = vehicles.filter(vehicle => {
-    // Filtrar por termo de pesquisa
+  const filteredVehicles = vehiclesWithDrivers.filter(vehicle => {
     if (searchTerm && !`${vehicle.modelo} ${vehicle.placa}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     
-    // Filtrar por status
     if (statusFilter && vehicle.status !== statusFilter) {
       return false;
     }
@@ -202,7 +226,6 @@ const Vehicles = () => {
       toast.success('Veículo cadastrado com sucesso!');
       setIsAddDialogOpen(false);
       
-      // Resetar formulário
       setFormData({
         modelo: "",
         placa: "",
@@ -239,7 +262,6 @@ const Vehicles = () => {
     if (!selectedVehicle || !selectedDriver) return;
     
     try {
-      // If there's a driver already assigned to this vehicle, unassign them
       if (currentDriver) {
         const { error: unassignError } = await supabase
           .from('motoristas')
@@ -249,7 +271,6 @@ const Vehicles = () => {
         if (unassignError) throw unassignError;
       }
       
-      // Assign the new driver to the vehicle
       const { error } = await supabase
         .from('motoristas')
         .update({ veiculo_id: selectedVehicle.id })
@@ -372,6 +393,7 @@ const Vehicles = () => {
                 <TableHead>Modelo</TableHead>
                 <TableHead>Placa</TableHead>
                 <TableHead>Ano</TableHead>
+                <TableHead>Motorista</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -389,6 +411,33 @@ const Vehicles = () => {
                   </TableCell>
                   <TableCell>{vehicle.placa}</TableCell>
                   <TableCell>{vehicle.ano}</TableCell>
+                  <TableCell>
+                    {vehicle.driver ? (
+                      <div className="flex items-center">
+                        <span className="font-medium">{vehicle.driver.nome}</span>
+                        <Button 
+                          variant="ghost"
+                          size="sm"
+                          className="ml-1 h-7"
+                          onClick={() => handleAssign(vehicle)}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        <span className="text-muted-foreground">Não atribuído</span>
+                        <Button 
+                          variant="ghost"
+                          size="sm" 
+                          className="ml-1 h-7"
+                          onClick={() => handleAssign(vehicle)}
+                        >
+                          <UserPlus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <StatusBadge status={vehicle.status} />
                   </TableCell>
@@ -448,7 +497,6 @@ const Vehicles = () => {
         />
       )}
       
-      {/* Add Vehicle Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -522,7 +570,6 @@ const Vehicles = () => {
         </DialogContent>
       </Dialog>
       
-      {/* View Vehicle Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           {selectedVehicle && (
@@ -595,7 +642,6 @@ const Vehicles = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Assign Driver Dialog */}
       <Dialog open={isAssignDriverDialogOpen} onOpenChange={setIsAssignDriverDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -661,7 +707,6 @@ const Vehicles = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
