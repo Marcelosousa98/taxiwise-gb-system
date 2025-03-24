@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageTransition } from '@/components/PageTransition';
 import { PageHeader } from '@/components/PageHeader';
-import { Car, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye } from 'lucide-react';
+import { Car, Search, Plus, Filter, ChevronDown, ChevronUp, MoreHorizontal, Trash2, Edit, Eye, UserPlus } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -51,12 +51,17 @@ const Vehicles = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isAssignDriverDialogOpen, setIsAssignDriverDialogOpen] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [drivers, setDrivers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  const [selectedDriver, setSelectedDriver] = useState<string | undefined>(undefined);
+  const [currentDriver, setCurrentDriver] = useState<any>(null);
   const [formData, setFormData] = useState({
     modelo: "",
     placa: "",
@@ -82,6 +87,40 @@ const Vehicles = () => {
     }
   };
 
+  const fetchDrivers = async () => {
+    setLoadingDrivers(true);
+    try {
+      const { data, error } = await supabase
+        .from('motoristas')
+        .select('*')
+        .eq('status', 'ativo');
+        
+      if (error) throw error;
+      setDrivers(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar motoristas:', error);
+      toast.error('Erro ao buscar motoristas');
+    } finally {
+      setLoadingDrivers(false);
+    }
+  };
+
+  const fetchCurrentDriver = async (vehicleId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('motoristas')
+        .select('*')
+        .eq('veiculo_id', vehicleId)
+        .maybeSingle();
+        
+      if (error) throw error;
+      setCurrentDriver(data);
+    } catch (error) {
+      console.error('Erro ao buscar motorista atual:', error);
+      setCurrentDriver(null);
+    }
+  };
+
   useEffect(() => {
     fetchVehicles();
 
@@ -99,12 +138,34 @@ const Vehicles = () => {
           fetchVehicles();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'motoristas'
+        },
+        () => {
+          if (selectedVehicle) {
+            fetchCurrentDriver(selectedVehicle.id);
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (isAssignDriverDialogOpen) {
+      fetchDrivers();
+      if (selectedVehicle) {
+        fetchCurrentDriver(selectedVehicle.id);
+      }
+    }
+  }, [isAssignDriverDialogOpen, selectedVehicle]);
 
   const filteredVehicles = vehicles.filter(vehicle => {
     // Filtrar por termo de pesquisa
@@ -174,15 +235,56 @@ const Vehicles = () => {
     }
   };
 
+  const handleAssignDriver = async () => {
+    if (!selectedVehicle || !selectedDriver) return;
+    
+    try {
+      // If there's a driver already assigned to this vehicle, unassign them
+      if (currentDriver) {
+        const { error: unassignError } = await supabase
+          .from('motoristas')
+          .update({ veiculo_id: null })
+          .eq('id', currentDriver.id);
+          
+        if (unassignError) throw unassignError;
+      }
+      
+      // Assign the new driver to the vehicle
+      const { error } = await supabase
+        .from('motoristas')
+        .update({ veiculo_id: selectedVehicle.id })
+        .eq('id', selectedDriver);
+        
+      if (error) throw error;
+      
+      toast.success('Motorista atribuído com sucesso!');
+      setIsAssignDriverDialogOpen(false);
+      setSelectedDriver(undefined);
+    } catch (error: any) {
+      console.error('Erro ao atribuir motorista:', error);
+      toast.error(error.message || 'Erro ao atribuir motorista');
+    }
+  };
+
   const handleView = (vehicle: any) => {
     setSelectedVehicle(vehicle);
     setIsViewDialogOpen(true);
+    fetchCurrentDriver(vehicle.id);
+  };
+
+  const handleAssign = (vehicle: any) => {
+    setSelectedVehicle(vehicle);
+    setIsAssignDriverDialogOpen(true);
   };
 
   const handleDeleteConfirm = (vehicle: any) => {
     setSelectedVehicle(vehicle);
     setIsDeleteDialogOpen(true);
   };
+
+  const availableDrivers = drivers.filter(driver => 
+    driver.veiculo_id === null || (currentDriver && driver.id === currentDriver.id)
+  );
 
   return (
     <PageTransition>
@@ -301,6 +403,10 @@ const Vehicles = () => {
                         <DropdownMenuItem onClick={() => handleView(vehicle)}>
                           <Eye className="h-4 w-4 mr-2" />
                           Ver detalhes
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleAssign(vehicle)}>
+                          <UserPlus className="h-4 w-4 mr-2" />
+                          Atribuir motorista
                         </DropdownMenuItem>
                         <DropdownMenuItem>
                           <Edit className="h-4 w-4 mr-2" />
@@ -449,11 +555,108 @@ const Vehicles = () => {
                 </div>
                 
                 <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Motorista Atual</h3>
+                  {currentDriver ? (
+                    <div className="flex items-center">
+                      <p className="font-semibold">{currentDriver.nome}</p>
+                      <Button 
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2 h-8"
+                        onClick={() => handleAssign(selectedVehicle)}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 mr-1" />
+                        Mudar
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center">
+                      <p className="text-muted-foreground">Nenhum motorista atribuído</p>
+                      <Button 
+                        variant="ghost"
+                        size="sm"
+                        className="ml-2 h-8"
+                        onClick={() => handleAssign(selectedVehicle)}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 mr-1" />
+                        Atribuir
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                
+                <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Data de Cadastro</h3>
                   <p>{format(new Date(selectedVehicle.criado_em), 'dd/MM/yyyy')}</p>
                 </div>
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Assign Driver Dialog */}
+      <Dialog open={isAssignDriverDialogOpen} onOpenChange={setIsAssignDriverDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Atribuir Motorista</DialogTitle>
+            <DialogDescription>
+              Selecione um motorista para atribuir a este veículo.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {loadingDrivers ? (
+            <div className="flex justify-center p-4">
+              <div className="animate-spin h-6 w-6 border-4 border-primary border-t-transparent rounded-full"></div>
+            </div>
+          ) : availableDrivers.length > 0 ? (
+            <>
+              <div className="space-y-4">
+                {currentDriver && (
+                  <div className="p-3 bg-muted rounded-md">
+                    <h3 className="text-sm font-medium mb-1">Motorista atual</h3>
+                    <p className="font-semibold">{currentDriver.nome}</p>
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <Label htmlFor="driver">Selecione o motorista</Label>
+                  <Select 
+                    value={selectedDriver} 
+                    onValueChange={setSelectedDriver}
+                  >
+                    <SelectTrigger id="driver">
+                      <SelectValue placeholder="Selecionar motorista" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableDrivers.map((driver) => (
+                        <SelectItem key={driver.id} value={driver.id}>
+                          {driver.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAssignDriverDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleAssignDriver} disabled={!selectedDriver}>
+                  Atribuir Motorista
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="text-center py-4">
+              <p className="text-muted-foreground mb-3">
+                Não há motoristas disponíveis para atribuição.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Cadastre novos motoristas ou libere motoristas já atribuídos a outros veículos.
+              </p>
+            </div>
           )}
         </DialogContent>
       </Dialog>
