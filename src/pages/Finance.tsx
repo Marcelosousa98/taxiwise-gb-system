@@ -611,7 +611,6 @@ const Finance = () => {
         />
       )}
       
-      {/* Add Finance Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -753,7 +752,6 @@ const Finance = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Edit Finance Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -896,7 +894,6 @@ const Finance = () => {
         </DialogContent>
       </Dialog>
       
-      {/* View Finance Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           {selectedFinance && (
@@ -1001,7 +998,6 @@ const Finance = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Generate Report Dialog */}
       <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
@@ -1087,9 +1083,7 @@ const Finance = () => {
               <Button variant="outline" onClick={() => setIsReportDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={() => handlePrint({ 
-                content: () => reportRef.current 
-              })}>
+              <Button onClick={() => handlePrint(reportRef.current)}>
                 <Printer className="h-4 w-4 mr-2" />
                 Gerar PDF
               </Button>
@@ -1098,7 +1092,6 @@ const Finance = () => {
         </DialogContent>
       </Dialog>
       
-      {/* Report Print Template (hidden) */}
       <div className="hidden">
         <div ref={reportRef} className="p-8 bg-white">
           <div className="mb-8 text-center">
@@ -1177,7 +1170,6 @@ const Finance = () => {
         </div>
       </div>
       
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -1214,3 +1206,4 @@ const Finance = () => {
 };
 
 export default Finance;
+
